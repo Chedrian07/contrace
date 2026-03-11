@@ -31,10 +31,8 @@ PORT="$2"
 STATE_FILE="$3"
 PID_FILE="${4:-}"
 FALLBACK_PID_FILE="${5:-}"
-CURRENT_PID_FILE="/run/contrace/attach-current.pid"
 
 mkdir -p /run/contrace
-: >"$CURRENT_PID_FILE"
 
 case "$MODE" in
   multi)
@@ -74,10 +72,6 @@ case "$MODE" in
         fi
         /usr/bin/gdbserver --attach "0.0.0.0:${PORT}" "$PID" >>"$STATE_FILE" 2>&1 &
         GDBSERVER_PID="$!"
-        sleep 1
-        if kill -0 "$GDBSERVER_PID" 2>/dev/null; then
-          printf '%s\n' "$PID" >"$CURRENT_PID_FILE"
-        fi
         echo "[contrace] gdbserver attach started for pid $PID" >>"$STATE_FILE"
         while kill -0 "$GDBSERVER_PID" 2>/dev/null; do
           sleep 1
@@ -96,10 +90,8 @@ case "$MODE" in
         if kill -0 "$GDBSERVER_PID" 2>/dev/null; then
           wait "$GDBSERVER_PID" 2>/dev/null || true
         fi
-        : >"$CURRENT_PID_FILE"
         echo "[contrace] gdbserver attach exited, retrying" >>"$STATE_FILE"
       else
-        : >"$CURRENT_PID_FILE"
         echo "[contrace] waiting for attach target" >>"$STATE_FILE"
       fi
       sleep 1
@@ -159,9 +151,6 @@ fi
             + ("\n" if env_exports else "")
             + f"export CONTRACE_EXEC_TARGET={_shell_quote(spec.socat_exec_target)}"
         )
-        if spec.debug_attach_port:
-            env_exports += "\nexport CONTRACE_ATTACH_WAIT_SECS=5"
-            env_exports += "\nexport CONTRACE_ATTACH_CONFIRM_FILE=/run/contrace/attach-current.pid"
     service_ports = ",".join(str(port) for port in spec.service_ports) or "(none)"
     keep_shell_block = f"""echo "=== contrace guest ready ==="
 echo "service pid:   $SERVICE_PID"
@@ -223,9 +212,7 @@ mount_fs() {{
   "$BUSYBOX" mount -t devpts devpts /dev/pts
   "$BUSYBOX" mkdir -p /run/contrace
   : >/run/contrace/last-child.pid
-  : >/run/contrace/attach-current.pid
   chmod 0666 /run/contrace/last-child.pid
-  chmod 0666 /run/contrace/attach-current.pid
   "$BUSYBOX" mount -t debugfs debugfs /sys/kernel/debug || true
   "$BUSYBOX" mount -t tracefs tracefs /sys/kernel/tracing || true
 }}
