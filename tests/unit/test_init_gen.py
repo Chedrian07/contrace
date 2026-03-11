@@ -31,6 +31,9 @@ def test_render_init_script_includes_trace_and_watchdogs() -> None:
     assert "/usr/libexec/contrace-watchdog.sh multi" in init_script
     assert "/usr/libexec/contrace-watchdog.sh attach" in init_script
     assert "/run/contrace/last-child.pid" in init_script
+    assert "/run/contrace/attach-current.pid" in init_script
+    assert "CONTRACE_ATTACH_WAIT_SECS" in init_script
     assert "gdbserver --multi" in watchdog
     assert "CONTRACE_EXEC_TARGET" in child_wrap
     assert "attach target changed" in watchdog
+    assert "attach-current.pid" in watchdog
