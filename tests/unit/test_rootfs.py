@@ -35,6 +35,7 @@ def _bundle() -> RuntimeBundle:
             trace_preset="off",
             hostname="contrace",
             keep_shell=True,
+            socat_exec_target=None,
         ),
         diagnostics=RuntimeDiagnostics(
             source_of_user="docker inspect",

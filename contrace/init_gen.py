@@ -32,6 +32,7 @@ MODE="$1"
 PORT="$2"
 STATE_FILE="$3"
 PID_FILE="${4:-}"
+FALLBACK_PID_FILE="${5:-}"
 
 mkdir -p /run/contrace
 
@@ -46,8 +47,14 @@ case "$MODE" in
   attach)
     ATTACH_DELAY="${CONTRACE_ATTACH_DELAY:-2}"
     while :; do
-      if [ -n "$PID_FILE" ] && [ -r "$PID_FILE" ]; then
-        PID="$(cat "$PID_FILE" 2>/dev/null || true)"
+      CANDIDATE_FILE=
+      if [ -n "$PID_FILE" ] && [ -r "$PID_FILE" ] && [ -s "$PID_FILE" ]; then
+        CANDIDATE_FILE="$PID_FILE"
+      elif [ -n "$FALLBACK_PID_FILE" ] && [ -r "$FALLBACK_PID_FILE" ] && [ -s "$FALLBACK_PID_FILE" ]; then
+        CANDIDATE_FILE="$FALLBACK_PID_FILE"
+      fi
+      if [ -n "$CANDIDATE_FILE" ]; then
+        PID="$(cat "$CANDIDATE_FILE" 2>/dev/null || true)"
         if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
           sleep "$ATTACH_DELAY"
           if ! kill -0 "$PID" 2>/dev/null; then
@@ -68,6 +75,24 @@ case "$MODE" in
     exit 2
     ;;
 esac
+"""
+
+
+def render_child_wrap_script() -> str:
+    return """#!/bin/sh
+set -eu
+
+TARGET="${CONTRACE_EXEC_TARGET:-}"
+if [ -z "$TARGET" ]; then
+  echo "[contrace] child wrapper missing CONTRACE_EXEC_TARGET" >&2
+  exit 111
+fi
+
+if [ -w /run/contrace/last-child.pid ]; then
+  printf '%s\n' "$$" >/run/contrace/last-child.pid
+fi
+
+exec /bin/sh -c "exec $TARGET"
 """
 
 
@@ -106,11 +131,17 @@ def render_init_script(
     if spec.debug_attach_port:
         attach_block = f"""
 if [ -x /usr/libexec/contrace-watchdog.sh ]; then
-  /usr/libexec/contrace-watchdog.sh attach "{spec.debug_attach_port}" /run/contrace/gdb-attach.state /run/contrace/service.pid &
+  /usr/libexec/contrace-watchdog.sh attach "{spec.debug_attach_port}" /run/contrace/gdb-attach.state /run/contrace/last-child.pid /run/contrace/service.pid &
 fi
 """
 
     env_exports = _render_env_exports(spec.env)
+    if spec.socat_exec_target:
+        env_exports = (
+            env_exports
+            + ("\n" if env_exports else "")
+            + f"export CONTRACE_EXEC_TARGET={_shell_quote(spec.socat_exec_target)}"
+        )
     service_ports = ",".join(str(port) for port in spec.service_ports) or "(none)"
     keep_shell_block = f"""echo "=== contrace guest ready ==="
 echo "service pid:   $SERVICE_PID"
@@ -171,6 +202,8 @@ mount_fs() {{
   "$BUSYBOX" mkdir -p /dev/pts /sys/kernel/debug /sys/kernel/tracing /run/contrace
   "$BUSYBOX" mount -t devpts devpts /dev/pts
   "$BUSYBOX" mkdir -p /run/contrace
+  : >/run/contrace/last-child.pid
+  chmod 0666 /run/contrace/last-child.pid
   "$BUSYBOX" mount -t debugfs debugfs /sys/kernel/debug || true
   "$BUSYBOX" mount -t tracefs tracefs /sys/kernel/tracing || true
 }}

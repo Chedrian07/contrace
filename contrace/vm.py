@@ -10,6 +10,7 @@ from pathlib import Path
 from contrace.artifacts import ArtifactLayout
 from contrace.config import ForwardMapping, ResolvedConfig
 from contrace.errors import ContraceError, ExitCode
+from contrace.paths import kernel_artifact_hint_path, kernel_artifact_path
 from contrace.runtime import RuntimeBundle
 from contrace.subprocess import CommandRunner
 
@@ -79,10 +80,10 @@ def build_forward_mappings(config: ResolvedConfig, bundle: RuntimeBundle) -> lis
 
 
 def resolve_kernel_path(guest_arch: str) -> Path:
-    kernel_path = Path("kernel") / guest_arch / "bzImage"
+    kernel_path = kernel_artifact_path(guest_arch)
     if kernel_path.exists():
         return kernel_path
-    artifact_hint = Path("kernel") / guest_arch / "artifact-url.txt"
+    artifact_hint = kernel_artifact_hint_path(guest_arch)
     if artifact_hint.exists():
         raise ContraceError(
             f"kernel artifact missing at {kernel_path}. Fetch it first with scripts/fetch-kernel.sh",
@@ -107,7 +108,7 @@ def build_qemu_plan(layout: ArtifactLayout, config: ResolvedConfig, bundle: Runt
         "-initrd",
         str(layout.initramfs_path),
         "-append",
-        "console=ttyS0 rdinit=/init loglevel=6 panic=-1 nokaslr printk.time=1",
+        "console=ttyS0 rdinit=/init loglevel=6 panic=-1 printk.time=1",
         "-nographic",
         "-m",
         config.memory,

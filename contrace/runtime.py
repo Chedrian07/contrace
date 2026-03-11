@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import tarfile
 from dataclasses import asdict, dataclass, field
 from pathlib import PurePosixPath
@@ -45,6 +46,7 @@ class RuntimeSpec:
     trace_preset: str
     hostname: str
     keep_shell: bool
+    socat_exec_target: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -326,6 +328,37 @@ def _resolve_argv(config: ResolvedConfig, metadata: DockerMetadata) -> tuple[lis
     return argv, "docker inspect"
 
 
+def _rewrite_socat_exec_target(argv: list[str], warnings: list[str]) -> tuple[list[str], str | None]:
+    wrapper_path = "/usr/libexec/contrace-child-wrap.sh"
+    pattern = re.compile(r"EXEC:([^,\s]+)")
+
+    if not argv:
+        return argv, None
+
+    if len(argv) >= 3 and PurePosixPath(argv[0]).name in {"sh", "bash"} and argv[1] == "-c":
+        command = argv[2]
+        match = pattern.search(command)
+        if not match:
+            return argv, None
+        target = match.group(1)
+        rewritten = command[: match.start(1)] + wrapper_path + command[match.end(1) :]
+        warnings.append("rewrote socat EXEC target to capture child pid for attach watchdog")
+        return [argv[0], argv[1], rewritten, *argv[3:]], target
+
+    rewritten_argv: list[str] = []
+    target: str | None = None
+    for arg in argv:
+        match = pattern.search(arg)
+        if match and target is None:
+            target = match.group(1)
+            rewritten_argv.append(arg[: match.start(1)] + wrapper_path + arg[match.end(1) :])
+        else:
+            rewritten_argv.append(arg)
+    if target is not None:
+        warnings.append("rewrote socat EXEC target to capture child pid for attach watchdog")
+    return rewritten_argv, target
+
+
 def _resolve_ports(
     config: ResolvedConfig,
     metadata: DockerMetadata,
@@ -367,6 +400,9 @@ def build_runtime_bundle(
 
         argv, source_of_argv = _resolve_argv(config, metadata)
         manager = classify_manager(argv)
+        socat_exec_target: str | None = None
+        if manager == "socat":
+            argv, socat_exec_target = _rewrite_socat_exec_target(argv, warnings)
         uid, gid, supplementary_gids, source_of_user = _resolve_user(
             config.runtime_user or metadata.user,
             passwd_entries,
@@ -418,6 +454,7 @@ def build_runtime_bundle(
         trace_preset=config.trace_preset,
         hostname=config.hostname,
         keep_shell=config.keep_shell,
+        socat_exec_target=socat_exec_target,
     )
     return RuntimeBundle(spec=spec, diagnostics=diagnostics)
 

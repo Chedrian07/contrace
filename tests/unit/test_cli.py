@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from contrace.cli import _normalize_help_argv, main
+from contrace.cli import _normalize_help_argv, build_parser, main
 from contrace.runtime import RuntimeBundle, RuntimeDiagnostics, RuntimeSpec
 
 
@@ -82,3 +82,9 @@ def test_top_level_help_mentions_examples(capsys) -> None:
     assert exc.value.code == 0
     assert "Examples:" in captured.out
     assert "contrace run ./challenge.zip" in captured.out
+
+
+def test_noshell_alias_sets_keep_shell_false() -> None:
+    parser = build_parser()
+    args = parser.parse_args(["run", "/tmp/challenge", "--noshell"])
+    assert args.keep_shell is False

@@ -103,7 +103,14 @@ def _add_common_arguments(parser: argparse.ArgumentParser) -> None:
     attach_group.add_argument("--enable-gdb-attach", action="store_true", help="enable best-effort attach watchdog")
     attach_group.add_argument("--disable-gdb-attach", action="store_true", help="disable attach watchdog")
     parser.add_argument("--qemu-gdb-port", type=int, default=None, help="enable QEMU gdbstub on the given host port")
-    parser.add_argument("--no-shell", dest="keep_shell", action="store_false", default=None, help="do not leave a serial root shell open")
+    parser.add_argument(
+        "--no-shell",
+        "--noshell",
+        dest="keep_shell",
+        action="store_false",
+        default=None,
+        help="do not leave a serial root shell open",
+    )
     parser.add_argument("--allow-root-fallback", action="store_true", help="fall back to root if USER resolution fails")
     parser.add_argument("--verbose", "-v", action="count", default=0, help="increase logging verbosity")
 

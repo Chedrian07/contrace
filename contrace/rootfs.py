@@ -12,7 +12,8 @@ from typing import Any
 
 from contrace.artifacts import ArtifactLayout
 from contrace.errors import ContraceError, ExitCode
-from contrace.init_gen import render_init_script, render_watchdog_script
+from contrace.init_gen import render_child_wrap_script, render_init_script, render_watchdog_script
+from contrace.paths import static_tool_path
 from contrace.runtime import RuntimeBundle
 
 LOGGER = logging.getLogger(__name__)
@@ -140,7 +141,7 @@ def _resolve_tool(
         if candidate_path.exists():
             return ToolResolution(candidate, None, required, False)
 
-    static_path = Path("static") / guest_arch / name
+    static_path = static_tool_path(guest_arch, name)
     if static_path.exists():
         target = Path(_tool_candidates(name)[0].lstrip("/"))
         target_path = guest_root / target
@@ -270,6 +271,11 @@ def assemble_rootfs(layout: ArtifactLayout, bundle: RuntimeBundle) -> RootfsAsse
     watchdog_path.write_text(render_watchdog_script(), encoding="utf-8")
     watchdog_path.chmod(0o755)
     metadata_map["usr/libexec/contrace-watchdog.sh"] = FileMetadata(0o755, 0, 0, 0)
+
+    child_wrap_path = layout.guest_root_dir / "usr" / "libexec" / "contrace-child-wrap.sh"
+    child_wrap_path.write_text(render_child_wrap_script(), encoding="utf-8")
+    child_wrap_path.chmod(0o755)
+    metadata_map["usr/libexec/contrace-child-wrap.sh"] = FileMetadata(0o755, 0, 0, 0)
 
     init_content = render_init_script(
         bundle.spec,
