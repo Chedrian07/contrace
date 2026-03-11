@@ -1,4 +1,4 @@
-from contrace.init_gen import render_child_wrap_script, render_init_script, render_watchdog_script
+from contrace.init_gen import render_init_script, render_watchdog_script
 from contrace.runtime import RuntimeSpec
 
 
@@ -25,8 +25,6 @@ def test_render_init_script_includes_trace_and_watchdogs() -> None:
 
     init_script = render_init_script(spec, busybox_path="/bin/busybox", helper_path="/usr/libexec/contrace-exec", direct_exec_ok=False)
     watchdog = render_watchdog_script()
-    child_wrap = render_child_wrap_script()
-
     assert "events/syscalls/enable" in init_script
     assert "/usr/libexec/contrace-watchdog.sh multi" in init_script
     assert "/usr/libexec/contrace-watchdog.sh attach" in init_script
@@ -34,6 +32,5 @@ def test_render_init_script_includes_trace_and_watchdogs() -> None:
     assert "/run/contrace/attach-current.pid" in init_script
     assert "CONTRACE_ATTACH_WAIT_SECS" in init_script
     assert "gdbserver --multi" in watchdog
-    assert "CONTRACE_EXEC_TARGET" in child_wrap
     assert "attach target changed" in watchdog
     assert "attach-current.pid" in watchdog

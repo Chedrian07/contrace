@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import shlex
-from typing import Iterable
-
 from contrace.runtime import RuntimeSpec
 
 
@@ -112,38 +110,6 @@ case "$MODE" in
     exit 2
     ;;
 esac
-"""
-
-
-def render_child_wrap_script() -> str:
-    return """#!/bin/sh
-set -eu
-
-TARGET="${CONTRACE_EXEC_TARGET:-}"
-if [ -z "$TARGET" ]; then
-  echo "[contrace] child wrapper missing CONTRACE_EXEC_TARGET" >&2
-  exit 111
-fi
-
-ATTACH_WAIT_SECS="${CONTRACE_ATTACH_WAIT_SECS:-0}"
-ATTACH_CONFIRM_FILE="${CONTRACE_ATTACH_CONFIRM_FILE:-}"
-
-if [ -w /run/contrace/last-child.pid ]; then
-  printf '%s\n' "$$" >/run/contrace/last-child.pid
-fi
-
-if [ "$ATTACH_WAIT_SECS" -gt 0 ] && [ -n "$ATTACH_CONFIRM_FILE" ]; then
-  I=0
-  while [ "$I" -lt "$ATTACH_WAIT_SECS" ]; do
-    if [ -r "$ATTACH_CONFIRM_FILE" ] && [ "$(cat "$ATTACH_CONFIRM_FILE" 2>/dev/null || true)" = "$$" ]; then
-      break
-    fi
-    sleep 1
-    I=$((I + 1))
-  done
-fi
-
-exec /bin/sh -c "exec $TARGET"
 """
 
 

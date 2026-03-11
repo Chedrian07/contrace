@@ -12,7 +12,7 @@ from typing import Any
 
 from contrace.artifacts import ArtifactLayout
 from contrace.errors import ContraceError, ExitCode
-from contrace.init_gen import render_child_wrap_script, render_init_script, render_watchdog_script
+from contrace.init_gen import render_init_script, render_watchdog_script
 from contrace.paths import static_tool_path
 from contrace.runtime import RuntimeBundle
 
@@ -126,6 +126,8 @@ def _tool_candidates(name: str) -> list[str]:
         return ["/usr/bin/trace-cmd", "/bin/trace-cmd"]
     if name == "contrace-exec":
         return ["/usr/libexec/contrace-exec"]
+    if name == "contrace-child-wrap":
+        return ["/usr/libexec/contrace-child-wrap"]
     raise ValueError(name)
 
 
@@ -254,6 +256,9 @@ def assemble_rootfs(layout: ArtifactLayout, bundle: RuntimeBundle) -> RootfsAsse
             raise
         helper_path = None
 
+    if bundle.spec.socat_exec_target:
+        _resolve_tool(layout.guest_root_dir, bundle.spec.guest_arch, "contrace-child-wrap", True, metadata_map)
+
     if trace_cmd.source_path is None and not (layout.guest_root_dir / trace_cmd.guest_path.lstrip("/")).exists():
         warnings.append("trace-cmd is not present in the guest; trace presets still work via tracefs")
 
@@ -271,11 +276,6 @@ def assemble_rootfs(layout: ArtifactLayout, bundle: RuntimeBundle) -> RootfsAsse
     watchdog_path.write_text(render_watchdog_script(), encoding="utf-8")
     watchdog_path.chmod(0o755)
     metadata_map["usr/libexec/contrace-watchdog.sh"] = FileMetadata(0o755, 0, 0, 0)
-
-    child_wrap_path = layout.guest_root_dir / "usr" / "libexec" / "contrace-child-wrap.sh"
-    child_wrap_path.write_text(render_child_wrap_script(), encoding="utf-8")
-    child_wrap_path.chmod(0o755)
-    metadata_map["usr/libexec/contrace-child-wrap.sh"] = FileMetadata(0o755, 0, 0, 0)
 
     init_content = render_init_script(
         bundle.spec,

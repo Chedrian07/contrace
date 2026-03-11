@@ -329,7 +329,7 @@ def _resolve_argv(config: ResolvedConfig, metadata: DockerMetadata) -> tuple[lis
 
 
 def _rewrite_socat_exec_target(argv: list[str], warnings: list[str]) -> tuple[list[str], str | None]:
-    wrapper_path = "/usr/libexec/contrace-child-wrap.sh"
+    wrapper_path = "/usr/libexec/contrace-child-wrap"
     pattern = re.compile(r"EXEC:([^,\s]+)")
 
     if not argv:
