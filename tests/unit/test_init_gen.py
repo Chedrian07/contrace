@@ -29,5 +29,8 @@ def test_render_init_script_includes_trace_and_watchdogs() -> None:
     assert "/usr/libexec/contrace-watchdog.sh multi" in init_script
     assert "/usr/libexec/contrace-watchdog.sh attach" in init_script
     assert "/run/contrace/last-child.pid" in init_script
+    if spec.socat_exec_target is not None:
+        attach_line = '/usr/libexec/contrace-watchdog.sh attach "1235" /run/contrace/gdb-attach.state /run/contrace/last-child.pid'
+        assert attach_line in init_script
     assert "gdbserver --multi" in watchdog
     assert "attach target changed" in watchdog

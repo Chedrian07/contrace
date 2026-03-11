@@ -138,9 +138,10 @@ def render_init_script(
 
     attach_block = ""
     if spec.debug_attach_port:
+        fallback_pid_arg = ' /run/contrace/service.pid' if spec.socat_exec_target is None else ""
         attach_block = f"""
 if [ -x /usr/libexec/contrace-watchdog.sh ]; then
-  /usr/libexec/contrace-watchdog.sh attach "{spec.debug_attach_port}" /run/contrace/gdb-attach.state /run/contrace/last-child.pid /run/contrace/service.pid &
+  /usr/libexec/contrace-watchdog.sh attach "{spec.debug_attach_port}" /run/contrace/gdb-attach.state /run/contrace/last-child.pid{fallback_pid_arg} &
 fi
 """
 
