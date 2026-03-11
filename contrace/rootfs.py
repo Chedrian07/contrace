@@ -131,6 +131,21 @@ def _tool_candidates(name: str) -> list[str]:
     raise ValueError(name)
 
 
+def _install_busybox_applet_links(guest_root: Path, metadata_map: dict[str, FileMetadata]) -> None:
+    applets = [
+        ("poweroff", "usr/sbin/poweroff"),
+        ("reboot", "usr/sbin/reboot"),
+        ("halt", "usr/sbin/halt"),
+    ]
+    for _, relpath in applets:
+        target = guest_root / relpath
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if target.exists() or target.is_symlink():
+            target.unlink()
+        os.symlink("/bin/busybox", target)
+        metadata_map[_normalize(relpath)] = FileMetadata(0o777, 0, 0, 0)
+
+
 def _resolve_tool(
     guest_root: Path,
     guest_arch: str,
@@ -261,6 +276,8 @@ def assemble_rootfs(layout: ArtifactLayout, bundle: RuntimeBundle) -> RootfsAsse
 
     if trace_cmd.source_path is None and not (layout.guest_root_dir / trace_cmd.guest_path.lstrip("/")).exists():
         warnings.append("trace-cmd is not present in the guest; trace presets still work via tracefs")
+
+    _install_busybox_applet_links(layout.guest_root_dir, metadata_map)
 
     runtime_dir = layout.guest_root_dir / "etc" / "contrace"
     runtime_dir.mkdir(parents=True, exist_ok=True)

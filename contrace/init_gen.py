@@ -31,8 +31,12 @@ PORT="$2"
 STATE_FILE="$3"
 PID_FILE="${4:-}"
 FALLBACK_PID_FILE="${5:-}"
+MODE_FILE="/run/contrace/attach-mode"
+TARGET_EXE_FILE="/run/contrace/attach-target.exe"
+CURRENT_PID_FILE="/run/contrace/attach-current.pid"
 
 mkdir -p /run/contrace
+: >"$CURRENT_PID_FILE"
 
 case "$MODE" in
   multi)
@@ -44,6 +48,8 @@ case "$MODE" in
     ;;
   attach)
     ATTACH_DELAY="${CONTRACE_ATTACH_DELAY:-2}"
+    ATTACH_MODE="${CONTRACE_ATTACH_MODE:-disabled}"
+    ATTACH_TARGET_EXE="${CONTRACE_ATTACH_TARGET_EXE:-}"
     resolve_attach_target() {
       TARGET_FILE=
       if [ -n "$PID_FILE" ] && [ -r "$PID_FILE" ] && [ -s "$PID_FILE" ]; then
@@ -61,6 +67,14 @@ case "$MODE" in
       printf '%s\n' "$TARGET_PID"
       return 0
     }
+    validate_attach_target() {
+      PID="$1"
+      if [ "$ATTACH_MODE" != "child" ] || [ -z "$ATTACH_TARGET_EXE" ]; then
+        return 0
+      fi
+      EXE="$(readlink "/proc/$PID/exe" 2>/dev/null || true)"
+      [ "$EXE" = "$ATTACH_TARGET_EXE" ]
+    }
     while :; do
       PID="$(resolve_attach_target || true)"
       if [ -n "$PID" ]; then
@@ -70,8 +84,14 @@ case "$MODE" in
           sleep 1
           continue
         fi
+        if ! validate_attach_target "$PID"; then
+          echo "[contrace] attach target pid $PID is not ready for exe $ATTACH_TARGET_EXE" >>"$STATE_FILE"
+          sleep 1
+          continue
+        fi
         /usr/bin/gdbserver --attach "0.0.0.0:${PORT}" "$PID" >>"$STATE_FILE" 2>&1 &
         GDBSERVER_PID="$!"
+        printf '%s\n' "$PID" >"$CURRENT_PID_FILE"
         echo "[contrace] gdbserver attach started for pid $PID" >>"$STATE_FILE"
         while kill -0 "$GDBSERVER_PID" 2>/dev/null; do
           sleep 1
@@ -86,12 +106,20 @@ case "$MODE" in
             wait "$GDBSERVER_PID" 2>/dev/null || true
             break
           fi
+          if ! validate_attach_target "$PID"; then
+            echo "[contrace] attach target pid $PID changed exe state, restarting" >>"$STATE_FILE"
+            kill "$GDBSERVER_PID" 2>/dev/null || true
+            wait "$GDBSERVER_PID" 2>/dev/null || true
+            break
+          fi
         done
         if kill -0 "$GDBSERVER_PID" 2>/dev/null; then
           wait "$GDBSERVER_PID" 2>/dev/null || true
         fi
+        : >"$CURRENT_PID_FILE"
         echo "[contrace] gdbserver attach exited, retrying" >>"$STATE_FILE"
       else
+        : >"$CURRENT_PID_FILE"
         echo "[contrace] waiting for attach target" >>"$STATE_FILE"
       fi
       sleep 1
@@ -139,8 +167,11 @@ def render_init_script(
     attach_block = ""
     if spec.debug_attach_port:
         fallback_pid_arg = ' /run/contrace/service.pid' if spec.socat_exec_target is None else ""
+        attach_target = spec.attach_target_exe or ""
         attach_block = f"""
 if [ -x /usr/libexec/contrace-watchdog.sh ]; then
+  export CONTRACE_ATTACH_MODE={_shell_quote(spec.attach_mode)}
+  export CONTRACE_ATTACH_TARGET_EXE={_shell_quote(attach_target)}
   /usr/libexec/contrace-watchdog.sh attach "{spec.debug_attach_port}" /run/contrace/gdb-attach.state /run/contrace/last-child.pid{fallback_pid_arg} &
 fi
 """
@@ -153,16 +184,24 @@ fi
             + f"export CONTRACE_EXEC_TARGET={_shell_quote(spec.socat_exec_target)}"
         )
     service_ports = ",".join(str(port) for port in spec.service_ports) or "(none)"
+    if spec.attach_mode == "disabled":
+        attach_status = "disabled"
+    elif spec.attach_mode == "child":
+        attach_status = "waiting for child"
+    else:
+        exe = spec.attach_target_exe or spec.argv[0]
+        attach_status = f"pid=$SERVICE_PID exe={exe}"
     keep_shell_block = f"""echo "=== contrace guest ready ==="
 echo "service pid:   $SERVICE_PID"
 echo "service ports: {service_ports}"
 echo "gdb multi:     {spec.debug_multi_port}"
-echo "gdb attach:    {spec.debug_attach_port} (best-effort)"
+echo "gdb attach:    {attach_status}"
 echo "tracefs:       /sys/kernel/tracing"
 echo "runtime:       /etc/contrace/runtime.json"
 echo "trace pipe:    cat /sys/kernel/tracing/trace_pipe"
 echo "enable event:  echo 1 > /sys/kernel/tracing/events/syscalls/enable"
 echo "record:        trace-cmd record -e syscalls"
+echo "shutdown:      poweroff | reboot | halt"
 export PS1='(contrace) # '
 if [ -c /dev/ttyS0 ]; then
   SHELL_TTY=/dev/ttyS0
@@ -213,7 +252,11 @@ mount_fs() {{
   "$BUSYBOX" mount -t devpts devpts /dev/pts
   "$BUSYBOX" mkdir -p /run/contrace
   : >/run/contrace/last-child.pid
+  : >/run/contrace/attach-current.pid
+  printf '%s\n' "{spec.attach_mode}" >/run/contrace/attach-mode
+  printf '%s\n' "{spec.attach_target_exe or ''}" >/run/contrace/attach-target.exe
   chmod 0666 /run/contrace/last-child.pid
+  chmod 0666 /run/contrace/attach-current.pid
   "$BUSYBOX" mount -t debugfs debugfs /sys/kernel/debug || true
   "$BUSYBOX" mount -t tracefs tracefs /sys/kernel/tracing || true
 }}

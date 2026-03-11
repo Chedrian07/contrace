@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import tarfile
 from dataclasses import asdict, dataclass, field
@@ -47,6 +48,8 @@ class RuntimeSpec:
     hostname: str
     keep_shell: bool
     socat_exec_target: str | None = None
+    attach_mode: str = "disabled"
+    attach_target_exe: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -328,6 +331,17 @@ def _resolve_argv(config: ResolvedConfig, metadata: DockerMetadata) -> tuple[lis
     return argv, "docker inspect"
 
 
+def _resolve_exec_path_for_attach(argv: list[str]) -> str | None:
+    if not argv:
+        return None
+    head = argv[0]
+    if head in {"/bin/sh", "/usr/bin/sh", "sh", "bash", "/bin/bash", "/usr/bin/bash"}:
+        return None
+    if head.startswith("/"):
+        return head
+    return None
+
+
 def _rewrite_socat_exec_target(argv: list[str], warnings: list[str]) -> tuple[list[str], str | None]:
     wrapper_path = "/usr/libexec/contrace-child-wrap"
     pattern = re.compile(r"EXEC:([^,\s]+)")
@@ -357,6 +371,16 @@ def _rewrite_socat_exec_target(argv: list[str], warnings: list[str]) -> tuple[li
     if target is not None:
         warnings.append("rewrote socat EXEC target to capture child pid for attach watchdog")
     return rewritten_argv, target
+
+
+def _expand_env_like_shell(value: str, env: dict[str, str]) -> str:
+    pattern = re.compile(r"\$(\w+)|\$\{([^}]+)\}")
+
+    def replace(match: re.Match[str]) -> str:
+        key = match.group(1) or match.group(2) or ""
+        return env.get(key, match.group(0))
+
+    return pattern.sub(replace, value)
 
 
 def _resolve_ports(
@@ -397,12 +421,16 @@ def build_runtime_bundle(
         warnings: list[str] = []
         passwd_entries = _parse_passwd(fs.read_text("/etc/passwd"))
         group_entries = _parse_group(fs.read_text("/etc/group"))
+        env_for_rewrite = dict(metadata.env)
+        env_for_rewrite.update(config.env)
 
         argv, source_of_argv = _resolve_argv(config, metadata)
         manager = classify_manager(argv)
         socat_exec_target: str | None = None
         if manager == "socat":
             argv, socat_exec_target = _rewrite_socat_exec_target(argv, warnings)
+            if socat_exec_target is not None:
+                socat_exec_target = _expand_env_like_shell(socat_exec_target, env_for_rewrite)
         uid, gid, supplementary_gids, source_of_user = _resolve_user(
             config.runtime_user or metadata.user,
             passwd_entries,
@@ -416,8 +444,7 @@ def build_runtime_bundle(
         if manager in {"socat", "xinetd", "inetd"} and config.enable_attach:
             warnings.append("attach watchdog is best-effort for fork-per-connection services")
 
-        env = dict(metadata.env)
-        env.update(config.env)
+        env = dict(env_for_rewrite)
         env.setdefault("PATH", DEFAULT_PATH)
         env.setdefault("TERM", "xterm-256color")
 
@@ -430,6 +457,16 @@ def build_runtime_bundle(
         shell_argv = config.shell_argv
         if config.shell_mode and not shell_argv:
             shell_argv = ["/bin/sh", "-c"]
+
+        attach_mode = "disabled"
+        attach_target_exe: str | None = None
+        if config.enable_attach:
+            if manager in {"socat", "xinetd", "inetd"}:
+                attach_mode = "child"
+                attach_target_exe = socat_exec_target
+            else:
+                attach_mode = "service"
+                attach_target_exe = _resolve_exec_path_for_attach(argv)
 
     diagnostics = RuntimeDiagnostics(
         source_of_user=source_of_user,
@@ -455,6 +492,8 @@ def build_runtime_bundle(
         hostname=config.hostname,
         keep_shell=config.keep_shell,
         socat_exec_target=socat_exec_target,
+        attach_mode=attach_mode,
+        attach_target_exe=attach_target_exe,
     )
     return RuntimeBundle(spec=spec, diagnostics=diagnostics)
 

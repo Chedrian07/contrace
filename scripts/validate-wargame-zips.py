@@ -190,15 +190,12 @@ def validate_target(zip_path: Path) -> ValidationResult:
             run_ok = False
         else:
             service_ready = wait_for_port(service_port)
-            gdb_ready = wait_for_port(gdb_multi_port)
             payload = try_interactive_payload(service_port) if service_ready else None
-            gdb_multi_ok = gdb_ready and try_gdb_connect(gdb_multi_port, extended=True)
+            gdb_multi_ok = try_gdb_connect(gdb_multi_port, extended=True)
             run_ok = service_ready and gdb_multi_ok
             if not service_ready:
                 notes.append(f"service port {service_port} did not open")
-            if not gdb_ready:
-                notes.append(f"gdb multi port {gdb_multi_port} did not open")
-            elif not gdb_multi_ok:
+            if not gdb_multi_ok:
                 notes.append(f"gdb multi connection to {gdb_multi_port} failed")
             if payload is not None:
                 notes.append(f"service sample: {payload[:120]!r}")
@@ -240,7 +237,6 @@ def validate_target(zip_path: Path) -> ValidationResult:
         start_new_session=True,
     )
     try:
-        wait_for_port(gdb_attach_port)
         gdb_attach_ok = try_gdb_connect(gdb_attach_port, extended=False)
         if not gdb_attach_ok:
             notes.append(f"gdb attach connection to {gdb_attach_port} failed")

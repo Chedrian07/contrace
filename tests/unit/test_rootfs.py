@@ -62,3 +62,4 @@ def test_assemble_rootfs_creates_initramfs(tmp_path: Path, monkeypatch) -> None:
     assert assembly.initramfs_path.exists()
     assert (layout.guest_root_dir / "init").exists()
     assert (layout.guest_root_dir / "etc" / "contrace" / "runtime.json").exists()
+    assert (layout.guest_root_dir / "usr" / "sbin" / "poweroff").is_symlink()

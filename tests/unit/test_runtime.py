@@ -71,6 +71,8 @@ def test_build_runtime_bundle_resolves_user_and_ports(tmp_path: Path) -> None:
     assert bundle.spec.env["HOME"] == "/home/ctf"
     assert bundle.spec.manager == "socat"
     assert bundle.spec.socat_exec_target == "/home/ctf/chall"
+    assert bundle.spec.attach_mode == "child"
+    assert bundle.spec.attach_target_exe == "/home/ctf/chall"
     assert "/usr/libexec/contrace-child-wrap" in bundle.spec.argv[2]
     assert bundle.diagnostics.source_of_argv == "docker inspect"
     assert bundle.diagnostics.source_of_ports == "docker inspect"
