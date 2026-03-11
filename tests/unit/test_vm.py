@@ -5,7 +5,7 @@ import pytest
 from contrace.config import ForwardMapping, ResolvedConfig
 from contrace.errors import ContraceError
 from contrace.runtime import RuntimeBundle, RuntimeDiagnostics, RuntimeSpec
-from contrace.vm import build_forward_mappings, select_accelerator
+from contrace.vm import build_accel_argument, build_forward_mappings, select_accelerator
 
 
 def _bundle() -> RuntimeBundle:
@@ -39,6 +39,7 @@ def test_select_accelerator_matches_macos_cross_arch(monkeypatch) -> None:
     selection = select_accelerator("x86_64")
 
     assert selection.accel == "tcg"
+    assert build_accel_argument(selection) == "tcg,thread=multi,tb-size=512"
 
 
 def test_build_forward_mappings_rejects_duplicate_host_port(monkeypatch) -> None:

@@ -23,6 +23,12 @@ class AccelSelection:
     reason: str
 
 
+def build_accel_argument(selection: AccelSelection) -> str:
+    if selection.accel == "tcg":
+        return "tcg,thread=multi,tb-size=512"
+    return selection.accel
+
+
 @dataclass(slots=True)
 class QemuPlan:
     command: list[str]
@@ -102,7 +108,7 @@ def build_qemu_plan(layout: ArtifactLayout, config: ResolvedConfig, bundle: Runt
     command = [
         "qemu-system-x86_64",
         "-accel",
-        accel.accel,
+        build_accel_argument(accel),
         "-kernel",
         str(kernel_path),
         "-initrd",
