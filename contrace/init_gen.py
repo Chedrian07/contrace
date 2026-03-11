@@ -46,26 +46,55 @@ case "$MODE" in
     ;;
   attach)
     ATTACH_DELAY="${CONTRACE_ATTACH_DELAY:-2}"
-    while :; do
-      CANDIDATE_FILE=
+    resolve_attach_target() {
+      TARGET_FILE=
       if [ -n "$PID_FILE" ] && [ -r "$PID_FILE" ] && [ -s "$PID_FILE" ]; then
-        CANDIDATE_FILE="$PID_FILE"
+        TARGET_FILE="$PID_FILE"
       elif [ -n "$FALLBACK_PID_FILE" ] && [ -r "$FALLBACK_PID_FILE" ] && [ -s "$FALLBACK_PID_FILE" ]; then
-        CANDIDATE_FILE="$FALLBACK_PID_FILE"
+        TARGET_FILE="$FALLBACK_PID_FILE"
       fi
-      if [ -n "$CANDIDATE_FILE" ]; then
-        PID="$(cat "$CANDIDATE_FILE" 2>/dev/null || true)"
-        if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
-          sleep "$ATTACH_DELAY"
-          if ! kill -0 "$PID" 2>/dev/null; then
-            sleep 1
-            continue
-          fi
-          /usr/bin/gdbserver --attach "0.0.0.0:${PORT}" "$PID" >>"$STATE_FILE" 2>&1 || true
-          echo "[contrace] gdbserver attach exited, retrying" >>"$STATE_FILE"
-        else
-          echo "[contrace] waiting for service pid" >>"$STATE_FILE"
+      if [ -z "$TARGET_FILE" ]; then
+        return 1
+      fi
+      TARGET_PID="$(cat "$TARGET_FILE" 2>/dev/null || true)"
+      if [ -z "$TARGET_PID" ] || ! kill -0 "$TARGET_PID" 2>/dev/null; then
+        return 1
+      fi
+      printf '%s\n' "$TARGET_PID"
+      return 0
+    }
+    while :; do
+      PID="$(resolve_attach_target || true)"
+      if [ -n "$PID" ]; then
+        sleep "$ATTACH_DELAY"
+        NEXT_PID="$(resolve_attach_target || true)"
+        if [ -z "$NEXT_PID" ] || [ "$NEXT_PID" != "$PID" ]; then
+          sleep 1
+          continue
         fi
+        /usr/bin/gdbserver --attach "0.0.0.0:${PORT}" "$PID" >>"$STATE_FILE" 2>&1 &
+        GDBSERVER_PID="$!"
+        echo "[contrace] gdbserver attach started for pid $PID" >>"$STATE_FILE"
+        while kill -0 "$GDBSERVER_PID" 2>/dev/null; do
+          sleep 1
+          NEXT_PID="$(resolve_attach_target || true)"
+          if [ -n "$NEXT_PID" ] && [ "$NEXT_PID" != "$PID" ]; then
+            echo "[contrace] attach target changed from $PID to $NEXT_PID, restarting" >>"$STATE_FILE"
+            kill "$GDBSERVER_PID" 2>/dev/null || true
+            wait "$GDBSERVER_PID" 2>/dev/null || true
+            break
+          fi
+          if ! kill -0 "$PID" 2>/dev/null; then
+            wait "$GDBSERVER_PID" 2>/dev/null || true
+            break
+          fi
+        done
+        if kill -0 "$GDBSERVER_PID" 2>/dev/null; then
+          wait "$GDBSERVER_PID" 2>/dev/null || true
+        fi
+        echo "[contrace] gdbserver attach exited, retrying" >>"$STATE_FILE"
+      else
+        echo "[contrace] waiting for attach target" >>"$STATE_FILE"
       fi
       sleep 1
     done
