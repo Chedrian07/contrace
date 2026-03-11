@@ -8,8 +8,8 @@ core
 .gdb_history
 *.md
 !README.md
+!README-KO.md
 AGENTS.md
-ARCHITECTURE.md
 claude.md
 MVP-DESIGN-BUNDLE.md
 
