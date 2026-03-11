@@ -1,0 +1,16 @@
+__pycache__/
+.pytest_cache/
+.DS_Store
+reports/
+*.log
+*.core
+core
+.gdb_history
+*.md
+!README.md
+AGENTS.md
+ARCHITECTURE.md
+claude.md
+MVP-DESIGN-BUNDLE.md
+
+wargame_zip*

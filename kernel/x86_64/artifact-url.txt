@@ -1,0 +1,1 @@
+https://example.invalid/contrace/kernel/x86_64/bzImage

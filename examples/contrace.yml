@@ -1,0 +1,43 @@
+version: 1
+
+guest:
+  arch: x86_64
+  memory: 512M
+  cpus: 1
+  hostname: contrace
+
+runtime:
+  user: ctf
+  workdir: /home/ctf
+  argv:
+    - socat
+    - TCP-LISTEN:31337,reuseaddr,fork
+    - EXEC:/home/ctf/chall
+  shell_mode: false
+  shell_argv:
+    - /bin/sh
+    - -c
+  env:
+    TERM: xterm-256color
+
+ports:
+  service:
+    - 31337
+  forwards:
+    - "31337:31337"
+    - "1234:1234"
+    - "1235:1235"
+
+debug:
+  gdb_multi_port: 1234
+  gdb_attach_port: 1235
+  enable_attach: false
+  qemu_gdb_port: null
+
+trace:
+  preset: syscalls
+
+policy:
+  allow_root_fallback: false
+  keep_shell: true
+  infer_ports: true
